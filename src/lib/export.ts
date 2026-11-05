@@ -11,17 +11,22 @@ export function exportToExcelWorkbook(): void {
   const wb = XLSX.utils.book_new();
 
   // Sheet 1: Account Analytics
-  const accountRows = data.accountAnalytics.map((a) => ({
-    'Reporting Date': a.reportingDate,
-    'Platform': formatPlatformName(a.platform),
-    'Follower Snapshot': a.followerSnapshot,
-    'Daily Views': a.dailyViews,
-    'Daily Likes': a.dailyLikes,
-    'Daily Comments': a.dailyComments,
-    'Daily Shares': a.dailyShares,
-    'Profile Visits': a.profileVisits || 0,
-    'Last Updated': a.updatedAt,
-  }));
+  const accountRows = data.accountAnalytics.map((a) => {
+    const isAllTime = a.entryType === 'all_time' || (a.allTimeViews !== undefined && a.allTimeViews > 0);
+    return {
+      'Date / As Of': a.reportingDate,
+      'Platform': formatPlatformName(a.platform),
+      'Entry Type': isAllTime ? 'All-Time Snapshot' : 'Daily Insight',
+      'Followers / Subscribers': a.followerSnapshot,
+      'Views': isAllTime ? (a.allTimeViews || a.dailyViews) : a.dailyViews,
+      'Likes': isAllTime ? (a.allTimeLikes ?? a.dailyLikes) : a.dailyLikes,
+      'Comments': isAllTime ? (a.allTimeComments ?? a.dailyComments) : a.dailyComments,
+      'Shares': isAllTime ? (a.allTimeShares ?? a.dailyShares) : a.dailyShares,
+      'Total Videos': a.allTimeVideos || 0,
+      'Profile Visits': a.profileVisits || 0,
+      'Last Updated': a.updatedAt,
+    };
+  });
   const wsAccount = XLSX.utils.json_to_sheet(accountRows);
   XLSX.utils.book_append_sheet(wb, wsAccount, 'Account Analytics');
 
@@ -103,16 +108,21 @@ export function exportToCsv(type: 'account' | 'video' | 'materials'): void {
   let filename = '';
 
   if (type === 'account') {
-    const headers = ['Reporting Date', 'Platform', 'Follower Snapshot', 'Daily Views', 'Daily Likes', 'Daily Comments', 'Daily Shares'];
-    const rows = data.accountAnalytics.map((a) => [
-      a.reportingDate,
-      a.platform,
-      a.followerSnapshot,
-      a.dailyViews,
-      a.dailyLikes,
-      a.dailyComments,
-      a.dailyShares,
-    ]);
+    const headers = ['Date', 'Platform', 'Type', 'Followers', 'Views', 'Likes', 'Comments', 'Shares', 'Videos'];
+    const rows = data.accountAnalytics.map((a) => {
+      const isAllTime = a.entryType === 'all_time' || (a.allTimeViews !== undefined && a.allTimeViews > 0);
+      return [
+        a.reportingDate,
+        formatPlatformName(a.platform),
+        isAllTime ? 'All-Time' : 'Daily',
+        a.followerSnapshot,
+        isAllTime ? (a.allTimeViews || a.dailyViews) : a.dailyViews,
+        isAllTime ? (a.allTimeLikes ?? a.dailyLikes) : a.dailyLikes,
+        isAllTime ? (a.allTimeComments ?? a.dailyComments) : a.dailyComments,
+        isAllTime ? (a.allTimeShares ?? a.dailyShares) : a.dailyShares,
+        a.allTimeVideos || 0,
+      ];
+    });
     content = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     filename = `abyssalfacts-account-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
   } else if (type === 'video') {

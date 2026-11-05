@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
 import {
   AlertCircle,
+  Award,
   BarChart2,
   Calendar,
   CheckCircle,
+  CheckCircle2,
   ChevronDown,
   Clock,
   Download,
   Edit2,
   Filter,
+  Globe,
   Layers,
   PieChart,
   Plus,
+  Sparkles,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -19,6 +23,7 @@ import {
 } from 'lucide-react';
 import {
   AccountAnalyticsEntry,
+  AccountEntryType,
   CheckpointInterval,
   Material,
   Platform,
@@ -28,6 +33,7 @@ import {
 } from '../types/index';
 import {
   calculateAccountViews,
+  calculateAllTimePlatformStats,
   calculateCheckpointDeltas,
   calculateCombinedFollowerTotal,
   calculateFollowerGrowth,
@@ -65,20 +71,31 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'account' | 'video' | 'intelligence'>('account');
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | 'all'>('all');
+  const [accountTypeFilter, setAccountTypeFilter] = useState<'all' | 'all_time' | 'daily'>('all');
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>(materials[0]?.id || '');
+
+  // All-time platform statistics
+  const allTimeStats = calculateAllTimePlatformStats(accountEntries);
 
   // Account Entry Modal State
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [accountForm, setAccountForm] = useState({
+    entryType: 'all_time' as AccountEntryType,
     platform: 'youtube_shorts' as Platform,
     reportingDate: new Date().toISOString().slice(0, 10),
     followerSnapshot: '',
+    allTimeViews: '',
+    allTimeLikes: '',
+    allTimeComments: '',
+    allTimeShares: '',
+    allTimeVideos: '',
     dailyViews: '',
     dailyLikes: '',
     dailyComments: '',
     dailyShares: '',
     profileVisits: '',
+    notes: '',
   });
   const [accountFormError, setAccountFormError] = useState<string | null>(null);
 
@@ -105,6 +122,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   // Filter account entries
   const filteredAccountEntries = accountEntries
     .filter((e) => selectedPlatform === 'all' || e.platform === selectedPlatform)
+    .filter((e) => {
+      if (accountTypeFilter === 'all') return true;
+      if (accountTypeFilter === 'all_time') return e.entryType === 'all_time' || (e.allTimeViews !== undefined && e.allTimeViews > 0);
+      return e.entryType === 'daily' || e.entryType === undefined;
+    })
     .sort((a, b) => b.reportingDate.localeCompare(a.reportingDate));
 
   // Selected video checkpoints
@@ -112,45 +134,178 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const materialCheckpoints = checkpoints.filter((c) => c.materialId === selectedMaterialId);
   const checkpointDeltas = calculateCheckpointDeltas(materialCheckpoints);
 
+  // Open modal for All-Time channel snapshot
+  const openAllTimeModal = (plat: Platform = 'youtube_shorts') => {
+    setEditingAccountId(null);
+    const existing = accountEntries
+      .filter((e) => e.platform === plat && (e.entryType === 'all_time' || (e.allTimeViews !== undefined && e.allTimeViews > 0)))
+      .sort((a, b) => b.reportingDate.localeCompare(a.reportingDate))[0];
+
+    setAccountForm({
+      entryType: 'all_time',
+      platform: plat,
+      reportingDate: new Date().toISOString().slice(0, 10),
+      followerSnapshot: existing ? existing.followerSnapshot.toString() : '',
+      allTimeViews: existing?.allTimeViews !== undefined ? existing.allTimeViews.toString() : '',
+      allTimeLikes: existing?.allTimeLikes !== undefined ? existing.allTimeLikes.toString() : '',
+      allTimeComments: existing?.allTimeComments !== undefined ? existing.allTimeComments.toString() : '',
+      allTimeShares: existing?.allTimeShares !== undefined ? existing.allTimeShares.toString() : '',
+      allTimeVideos: existing?.allTimeVideos !== undefined ? existing.allTimeVideos.toString() : '',
+      dailyViews: '',
+      dailyLikes: '',
+      dailyComments: '',
+      dailyShares: '',
+      profileVisits: existing?.profileVisits?.toString() || '',
+      notes: existing?.notes || '',
+    });
+    setAccountFormError(null);
+    setIsAccountModalOpen(true);
+  };
+
+  // Open modal for Daily Insights
+  const openDailyModal = (plat: Platform = 'youtube_shorts') => {
+    setEditingAccountId(null);
+    const latestFollowers = accountEntries
+      .filter((e) => e.platform === plat)
+      .sort((a, b) => b.reportingDate.localeCompare(a.reportingDate))[0]?.followerSnapshot;
+
+    setAccountForm({
+      entryType: 'daily',
+      platform: plat,
+      reportingDate: new Date().toISOString().slice(0, 10),
+      followerSnapshot: latestFollowers !== undefined ? latestFollowers.toString() : '',
+      allTimeViews: '',
+      allTimeLikes: '',
+      allTimeComments: '',
+      allTimeShares: '',
+      allTimeVideos: '',
+      dailyViews: '',
+      dailyLikes: '',
+      dailyComments: '',
+      dailyShares: '',
+      profileVisits: '',
+      notes: '',
+    });
+    setAccountFormError(null);
+    setIsAccountModalOpen(true);
+  };
+
+  // Open modal to edit an existing record
+  const openEditModal = (entry: AccountAnalyticsEntry) => {
+    setEditingAccountId(entry.id);
+    const isAllTime = entry.entryType === 'all_time' || (entry.allTimeViews !== undefined && entry.allTimeViews > 0);
+    setAccountForm({
+      entryType: isAllTime ? 'all_time' : 'daily',
+      platform: entry.platform,
+      reportingDate: entry.reportingDate,
+      followerSnapshot: entry.followerSnapshot.toString(),
+      allTimeViews: entry.allTimeViews !== undefined ? entry.allTimeViews.toString() : (entry.dailyViews > 0 && isAllTime ? entry.dailyViews.toString() : ''),
+      allTimeLikes: entry.allTimeLikes !== undefined ? entry.allTimeLikes.toString() : '',
+      allTimeComments: entry.allTimeComments !== undefined ? entry.allTimeComments.toString() : '',
+      allTimeShares: entry.allTimeShares !== undefined ? entry.allTimeShares.toString() : '',
+      allTimeVideos: entry.allTimeVideos !== undefined ? entry.allTimeVideos.toString() : '',
+      dailyViews: entry.dailyViews.toString(),
+      dailyLikes: entry.dailyLikes.toString(),
+      dailyComments: entry.dailyComments.toString(),
+      dailyShares: entry.dailyShares.toString(),
+      profileVisits: entry.profileVisits?.toString() || '',
+      notes: entry.notes || '',
+    });
+    setAccountFormError(null);
+    setIsAccountModalOpen(true);
+  };
+
   // Handle Account Form Submit
   const handleAccountSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setAccountFormError(null);
 
     const follower = parseInt(accountForm.followerSnapshot, 10);
-    const views = parseInt(accountForm.dailyViews, 10);
-    const likes = parseInt(accountForm.dailyLikes, 10);
-    const comments = parseInt(accountForm.dailyComments, 10);
-    const shares = parseInt(accountForm.dailyShares, 10);
-    const visits = accountForm.profileVisits ? parseInt(accountForm.profileVisits, 10) : undefined;
-
-    if (isNaN(follower) || isNaN(views) || isNaN(likes) || isNaN(comments) || isNaN(shares)) {
-      setAccountFormError('Please enter valid numeric values for all required fields.');
+    if (isNaN(follower) || follower < 0) {
+      setAccountFormError('Please enter a valid non-negative number for Followers / Subscribers.');
       return;
     }
 
-    if (follower < 0 || views < 0 || likes < 0 || comments < 0 || shares < 0) {
-      setAccountFormError('Metrics cannot be negative.');
-      return;
-    }
+    if (accountForm.entryType === 'all_time') {
+      const allViews = parseInt(accountForm.allTimeViews, 10);
+      if (isNaN(allViews) || allViews < 0) {
+        setAccountFormError('Please enter a valid non-negative number for Lifetime Channel Views.');
+        return;
+      }
+      const allLikes = accountForm.allTimeLikes ? parseInt(accountForm.allTimeLikes, 10) : 0;
+      const allComments = accountForm.allTimeComments ? parseInt(accountForm.allTimeComments, 10) : 0;
+      const allShares = accountForm.allTimeShares ? parseInt(accountForm.allTimeShares, 10) : 0;
+      const allVideos = accountForm.allTimeVideos ? parseInt(accountForm.allTimeVideos, 10) : undefined;
+      const visits = accountForm.profileVisits ? parseInt(accountForm.profileVisits, 10) : undefined;
 
-    const res = onSaveAccountEntry({
-      id: editingAccountId || undefined,
-      platform: accountForm.platform,
-      reportingDate: accountForm.reportingDate,
-      followerSnapshot: follower,
-      dailyViews: views,
-      dailyLikes: likes,
-      dailyComments: comments,
-      dailyShares: shares,
-      profileVisits: visits,
-    });
+      if (allLikes < 0 || allComments < 0 || allShares < 0 || (allVideos !== undefined && allVideos < 0)) {
+        setAccountFormError('Metrics cannot be negative.');
+        return;
+      }
 
-    if (!res.success) {
-      setAccountFormError(res.error || 'Failed to save account entry.');
+      const res = onSaveAccountEntry({
+        id: editingAccountId || undefined,
+        platform: accountForm.platform,
+        reportingDate: accountForm.reportingDate,
+        entryType: 'all_time',
+        followerSnapshot: follower,
+        dailyViews: 0,
+        dailyLikes: 0,
+        dailyComments: 0,
+        dailyShares: 0,
+        allTimeViews: allViews,
+        allTimeLikes: allLikes,
+        allTimeComments: allComments,
+        allTimeShares: allShares,
+        allTimeVideos: allVideos,
+        profileVisits: visits,
+        notes: accountForm.notes || undefined,
+      });
+
+      if (!res.success) {
+        setAccountFormError(res.error || 'Failed to save all-time snapshot.');
+      } else {
+        setIsAccountModalOpen(false);
+        setEditingAccountId(null);
+      }
     } else {
-      setIsAccountModalOpen(false);
-      setEditingAccountId(null);
+      // Daily insight mode
+      const views = parseInt(accountForm.dailyViews, 10);
+      const likes = parseInt(accountForm.dailyLikes, 10);
+      const comments = parseInt(accountForm.dailyComments, 10);
+      const shares = parseInt(accountForm.dailyShares, 10);
+      const visits = accountForm.profileVisits ? parseInt(accountForm.profileVisits, 10) : undefined;
+
+      if (isNaN(views) || isNaN(likes) || isNaN(comments) || isNaN(shares)) {
+        setAccountFormError('Please enter valid numeric values for all required daily fields.');
+        return;
+      }
+
+      if (views < 0 || likes < 0 || comments < 0 || shares < 0) {
+        setAccountFormError('Metrics cannot be negative.');
+        return;
+      }
+
+      const res = onSaveAccountEntry({
+        id: editingAccountId || undefined,
+        platform: accountForm.platform,
+        reportingDate: accountForm.reportingDate,
+        entryType: 'daily',
+        followerSnapshot: follower,
+        dailyViews: views,
+        dailyLikes: likes,
+        dailyComments: comments,
+        dailyShares: shares,
+        profileVisits: visits,
+        notes: accountForm.notes || undefined,
+      });
+
+      if (!res.success) {
+        setAccountFormError(res.error || 'Failed to save daily insight.');
+      } else {
+        setIsAccountModalOpen(false);
+        setEditingAccountId(null);
+      }
     }
   };
 
@@ -250,89 +405,222 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
       {/* 6.1 Account Analytics Tab */}
       {activeTab === 'account' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center space-x-2">
-              <Filter className="w-4 h-4 text-[var(--accent-light)]" />
-              <select
-                value={selectedPlatform}
-                onChange={(e) => setSelectedPlatform(e.target.value as any)}
-                className="bg-[var(--elevated)] border border-[var(--accent)]/20 text-xs font-medium text-slate-200 px-3 py-1.5 rounded-lg focus:outline-none focus:border-[var(--accent)]"
-              >
-                <option value="all">All Platforms</option>
-                <option value="youtube_shorts">YouTube Shorts</option>
-                <option value="tiktok">TikTok</option>
-                <option value="instagram_reels">Instagram Reels</option>
-                <option value="facebook_reels">Facebook Reels</option>
-              </select>
+        <div className="space-y-5">
+          {/* All-Time Platform Command Cards */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <Globe className="w-4 h-4 text-[var(--accent-light)]" />
+                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
+                  All-Time Channel Overview (Lifetime Stats)
+                </h3>
+              </div>
+              <span className="text-[11px] text-[var(--text-muted)] hidden sm:inline">
+                Real channel totals across YouTube, TikTok, Instagram & Facebook
+              </span>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {(['youtube_shorts', 'tiktok', 'instagram_reels', 'facebook_reels'] as Platform[]).map((plat) => {
+                const cfg = PLATFORM_CONFIG[plat];
+                const pStat = allTimeStats.byPlatform[plat];
+                const engRate = calculateWeightedEngagementRate(
+                  pStat.likes,
+                  pStat.comments,
+                  pStat.shares,
+                  pStat.views
+                );
+                const hasData = pStat.views > 0 || pStat.followers > 0;
+
+                return (
+                  <div
+                    key={plat}
+                    className="p-4 rounded-xl arctic-glass border border-[var(--panel-border)] hover:border-[var(--accent)]/40 transition-all flex flex-col justify-between space-y-3"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 font-bold text-xs text-slate-100">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full ring-2 ring-white/10"
+                            style={{ backgroundColor: cfg.brandColor }}
+                          />
+                          {cfg.name}
+                        </span>
+                        {hasData && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--elevated)] text-emerald-400 border border-emerald-500/20">
+                            Recorded
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-3 space-y-1.5">
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[11px] text-[var(--text-muted)]">Subscribers / Followers</span>
+                          <span className="text-sm font-bold font-mono text-[var(--text-primary)]">
+                            {pStat.followers.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[11px] text-[var(--text-muted)]">All-Time Views</span>
+                          <span className="text-sm font-bold font-mono text-[var(--accent-light)]">
+                            {pStat.views.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between text-[11px]">
+                          <span className="text-[var(--text-muted)]">All-Time Likes</span>
+                          <span className="font-mono text-slate-300">
+                            {pStat.likes.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between text-[11px]">
+                          <span className="text-[var(--text-muted)]">Engagement Rate</span>
+                          <span className="font-mono text-emerald-400 font-semibold">
+                            {engRate}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-[var(--panel-border)] flex items-center justify-between">
+                      <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                        {pStat.lastUpdated ? `As of ${pStat.lastUpdated}` : 'No stats entered'}
+                      </span>
+                      <button
+                        onClick={() => openAllTimeModal(plat)}
+                        className="text-[11px] font-semibold text-[var(--accent-light)] hover:underline flex items-center gap-1"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Update Stats</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Action Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center space-x-1.5">
+                <Filter className="w-3.5 h-3.5 text-[var(--accent-light)]" />
+                <select
+                  value={selectedPlatform}
+                  onChange={(e) => setSelectedPlatform(e.target.value as any)}
+                  className="bg-[var(--elevated)] border border-[var(--panel-border)] text-xs font-medium text-[var(--text-primary)] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-[var(--accent)]"
+                >
+                  <option value="all">All 4 Platforms</option>
+                  <option value="youtube_shorts">YouTube Shorts</option>
+                  <option value="tiktok">TikTok</option>
+                  <option value="instagram_reels">Instagram Reels</option>
+                  <option value="facebook_reels">Facebook Reels</option>
+                </select>
+              </div>
+
+              {/* Entry type tab filter */}
+              <div className="flex items-center bg-[var(--elevated)] p-0.5 rounded-lg border border-[var(--panel-border)]">
+                <button
+                  onClick={() => setAccountTypeFilter('all')}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded ${
+                    accountTypeFilter === 'all'
+                      ? 'bg-[var(--accent)] text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  All ({accountEntries.length})
+                </button>
+                <button
+                  onClick={() => setAccountTypeFilter('all_time')}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded ${
+                    accountTypeFilter === 'all_time'
+                      ? 'bg-[var(--accent)] text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  All-Time Snapshots ({accountEntries.filter((e) => e.entryType === 'all_time' || (e.allTimeViews !== undefined && e.allTimeViews > 0)).length})
+                </button>
+                <button
+                  onClick={() => setAccountTypeFilter('daily')}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded ${
+                    accountTypeFilter === 'daily'
+                      ? 'bg-[var(--accent)] text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Daily Logs ({accountEntries.filter((e) => e.entryType === 'daily' || e.entryType === undefined).length})
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => exportToCsv('account')}
-                className="px-3 py-1.5 rounded-lg border border-[var(--accent)]/20 text-xs text-[var(--text-muted)] hover:text-slate-200 hover:border-[var(--accent)]/50 flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-lg border border-[var(--panel-border)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/50 flex items-center gap-1.5 transition-all"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Export CSV</span>
               </button>
               <button
-                onClick={() => {
-                  setEditingAccountId(null);
-                  setAccountForm({
-                    platform: 'youtube_shorts',
-                    reportingDate: new Date().toISOString().slice(0, 10),
-                    followerSnapshot: '',
-                    dailyViews: '',
-                    dailyLikes: '',
-                    dailyComments: '',
-                    dailyShares: '',
-                    profileVisits: '',
-                  });
-                  setAccountFormError(null);
-                  setIsAccountModalOpen(true);
-                }}
-                className="px-3.5 py-1.5 rounded-lg command-btn-primary text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/15"
+                onClick={() => openDailyModal(selectedPlatform === 'all' ? 'youtube_shorts' : selectedPlatform)}
+                className="px-3 py-1.5 rounded-lg bg-[var(--elevated)] border border-[var(--panel-border)] hover:border-[var(--accent)]/50 text-[var(--text-primary)] font-semibold text-xs flex items-center gap-1.5 transition-all"
               >
-                <Plus className="w-4 h-4" />
-                <span>Enter Daily Insights</span>
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Log Daily Insights</span>
+              </button>
+              <button
+                onClick={() => openAllTimeModal(selectedPlatform === 'all' ? 'youtube_shorts' : selectedPlatform)}
+                className="px-3.5 py-1.5 rounded-lg command-btn-primary text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20"
+              >
+                <Award className="w-4 h-4 text-amber-200" />
+                <span>Enter All-Time Data</span>
               </button>
             </div>
           </div>
 
           {/* Account Table */}
-          <div className="arctic-glass rounded-xl overflow-hidden border border-[var(--accent)]/15">
+          <div className="arctic-glass rounded-xl overflow-hidden border border-[var(--panel-border)]">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-[var(--elevated)] text-[var(--text-muted)] uppercase tracking-wider font-semibold border-b border-[var(--panel-border)]">
                   <tr>
-                    <th className="py-3 px-4">Date</th>
+                    <th className="py-3 px-4">Date / As Of</th>
                     <th className="py-3 px-4">Platform</th>
-                    <th className="py-3 px-4">Follower Snapshot</th>
-                    <th className="py-3 px-4">Daily Views</th>
+                    <th className="py-3 px-4">Type</th>
+                    <th className="py-3 px-4">Followers / Audience</th>
+                    <th className="py-3 px-4">Views</th>
                     <th className="py-3 px-4">Interactions (L / C / S)</th>
-                    <th className="py-3 px-4">Daily Engagement</th>
+                    <th className="py-3 px-4">Engagement</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--panel-border)] text-slate-200">
+                <tbody className="divide-y divide-[var(--panel-border)] text-[var(--text-primary)]">
                   {filteredAccountEntries.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-[var(--text-muted)]">
-                        No account analytics found. Enter your daily snapshot to begin tracking.
+                      <td colSpan={8} className="py-10 text-center space-y-2">
+                        <Globe className="w-8 h-8 text-[var(--accent-light)] opacity-40 mx-auto" />
+                        <p className="font-semibold text-slate-200">No account analytics records found</p>
+                        <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
+                          Click <strong className="text-[var(--accent-light)]">"Enter All-Time Data"</strong> to record your channel's total lifetime views and followers, or <strong className="text-cyan-400">"Log Daily Insights"</strong> for day-specific tracking.
+                        </p>
                       </td>
                     </tr>
                   ) : (
                     filteredAccountEntries.map((entry) => {
                       const cfg = PLATFORM_CONFIG[entry.platform];
+                      const isAllTime = entry.entryType === 'all_time' || (entry.allTimeViews !== undefined && entry.allTimeViews > 0);
+                      const viewCount = isAllTime ? (entry.allTimeViews || entry.dailyViews) : entry.dailyViews;
+                      const likesCount = isAllTime ? (entry.allTimeLikes ?? entry.dailyLikes) : entry.dailyLikes;
+                      const commentsCount = isAllTime ? (entry.allTimeComments ?? entry.dailyComments) : entry.dailyComments;
+                      const sharesCount = isAllTime ? (entry.allTimeShares ?? entry.dailyShares) : entry.dailyShares;
                       const engRate = calculateWeightedEngagementRate(
-                        entry.dailyLikes,
-                        entry.dailyComments,
-                        entry.dailyShares,
-                        entry.dailyViews
+                        likesCount,
+                        commentsCount,
+                        sharesCount,
+                        viewCount
                       );
                       return (
                         <tr key={entry.id} className="hover:bg-[var(--elevated-hover)]/40 transition-colors">
-                          <td className="py-3 px-4 font-mono text-indigo-200">
+                          <td className="py-3 px-4 font-mono text-indigo-300">
                             {entry.reportingDate}
                           </td>
                           <td className="py-3 px-4">
@@ -344,44 +632,49 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                               {cfg.name}
                             </span>
                           </td>
+                          <td className="py-3 px-4">
+                            {isAllTime ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                                <Award className="w-3 h-3" />
+                                All-Time
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                <Calendar className="w-3 h-3" />
+                                Daily Log
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 font-mono font-bold">
                             {entry.followerSnapshot.toLocaleString()}
                           </td>
-                          <td className="py-3 px-4 font-mono text-[var(--accent-light)] font-semibold">
-                            {entry.dailyViews.toLocaleString()}
+                          <td className="py-3 px-4 font-mono font-semibold">
+                            <span className={isAllTime ? 'text-[var(--accent-light)]' : 'text-cyan-400'}>
+                              {viewCount.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] text-[var(--text-muted)] ml-1 font-normal uppercase">
+                              {isAllTime ? 'total' : 'today'}
+                            </span>
                           </td>
                           <td className="py-3 px-4 font-mono text-[var(--text-muted)]">
-                            <span className="text-slate-200">{entry.dailyLikes}</span> /{' '}
-                            <span className="text-slate-200">{entry.dailyComments}</span> /{' '}
-                            <span className="text-slate-200">{entry.dailyShares}</span>
+                            <span className="text-[var(--text-primary)]">{likesCount.toLocaleString()}</span> /{' '}
+                            <span className="text-[var(--text-primary)]">{commentsCount.toLocaleString()}</span> /{' '}
+                            <span className="text-[var(--text-primary)]">{sharesCount.toLocaleString()}</span>
                           </td>
                           <td className="py-3 px-4 font-mono text-emerald-400 font-bold">
                             {engRate}%
                           </td>
                           <td className="py-3 px-4 text-right space-x-2">
                             <button
-                              onClick={() => {
-                                setEditingAccountId(entry.id);
-                                setAccountForm({
-                                  platform: entry.platform,
-                                  reportingDate: entry.reportingDate,
-                                  followerSnapshot: entry.followerSnapshot.toString(),
-                                  dailyViews: entry.dailyViews.toString(),
-                                  dailyLikes: entry.dailyLikes.toString(),
-                                  dailyComments: entry.dailyComments.toString(),
-                                  dailyShares: entry.dailyShares.toString(),
-                                  profileVisits: entry.profileVisits?.toString() || '',
-                                });
-                                setIsAccountModalOpen(true);
-                              }}
-                              className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--accent-light)]"
+                              onClick={() => openEditModal(entry)}
+                              className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--accent-light)] transition-colors"
                               title="Edit Entry"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => onDeleteAccountEntry(entry.id)}
-                              className="p-1 rounded text-[var(--text-muted)] hover:text-rose-400"
+                              className="p-1 rounded text-[var(--text-secondary)] hover:text-rose-400 transition-colors"
                               title="Delete Entry"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -664,13 +957,60 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         </div>
       )}
 
-      {/* Account Insights Modal */}
+      {/* Account Insights Modal (Supports All-Time & Daily) */}
       {isAccountModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-md p-6 rounded-2xl arctic-glass border border-[var(--accent)]/40 shadow-2xl space-y-4">
-            <h2 className="text-lg font-bold text-slate-100">
-              {editingAccountId ? 'Edit Daily Account Insights' : 'Enter Daily Account Insights'}
-            </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="w-full max-w-lg p-6 rounded-2xl arctic-glass border border-[var(--accent)]/40 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Mode Switcher */}
+            <div className="flex items-center justify-between border-b border-[var(--panel-border)] pb-3">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
+                  {accountForm.entryType === 'all_time' ? (
+                    <>
+                      <Award className="w-5 h-5 text-amber-300" />
+                      <span>{editingAccountId ? 'Edit All-Time Channel Stats' : 'Enter All-Time Channel Stats'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="w-5 h-5 text-cyan-400" />
+                      <span>{editingAccountId ? 'Edit Daily Account Insights' : 'Log Daily Account Insights'}</span>
+                    </>
+                  )}
+                </h2>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                  {accountForm.entryType === 'all_time'
+                    ? 'Record your channel’s cumulative lifetime views, subscribers, and stats directly'
+                    : 'Log day-specific performance and activity for a single 24-hour period'}
+                </p>
+              </div>
+
+              {!editingAccountId && (
+                <div className="flex items-center bg-[var(--elevated)] p-1 rounded-lg border border-[var(--panel-border)] shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setAccountForm({ ...accountForm, entryType: 'all_time' })}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      accountForm.entryType === 'all_time'
+                        ? 'bg-[var(--accent)] text-white shadow-sm'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    All-Time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAccountForm({ ...accountForm, entryType: 'daily' })}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-all ${
+                      accountForm.entryType === 'daily'
+                        ? 'bg-[var(--accent)] text-white shadow-sm'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    Daily Log
+                  </button>
+                </div>
+              )}
+            </div>
 
             {accountFormError && (
               <div className="p-3 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
@@ -679,7 +1019,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleAccountSubmit} className="space-y-3">
+            <form onSubmit={handleAccountSubmit} className="space-y-3.5">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
@@ -688,7 +1028,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   <select
                     value={accountForm.platform}
                     onChange={(e) => setAccountForm({ ...accountForm, platform: e.target.value as any })}
-                    className="w-full bg-[var(--elevated)] border border-[var(--accent)]/30 rounded-lg p-2 text-xs text-slate-200"
+                    className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
                   >
                     <option value="youtube_shorts">YouTube Shorts</option>
                     <option value="tiktok">TikTok</option>
@@ -698,92 +1038,232 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
-                    Reporting Date
+                    {accountForm.entryType === 'all_time' ? 'Snapshot Date (As Of)' : 'Reporting Date'}
                   </label>
                   <input
                     type="date"
                     value={accountForm.reportingDate}
                     onChange={(e) => setAccountForm({ ...accountForm, reportingDate: e.target.value })}
-                    className="w-full bg-[var(--elevated)] border border-[var(--accent)]/30 rounded-lg p-2 text-xs text-slate-200 font-mono"
+                    className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
                     required
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
-                  Follower/Subscriber Snapshot (Total Audience)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="e.g. 15380"
-                  value={accountForm.followerSnapshot}
-                  onChange={(e) => setAccountForm({ ...accountForm, followerSnapshot: e.target.value })}
-                  className="w-full bg-[var(--elevated)] border border-[var(--accent)]/30 rounded-lg p-2 text-xs text-slate-200 font-mono"
-                  required
-                />
-              </div>
+              {/* ALL-TIME MODE FIELDS */}
+              {accountForm.entryType === 'all_time' ? (
+                <>
+                  <div className="p-3.5 rounded-xl bg-[var(--elevated)]/60 border border-[var(--panel-border)] space-y-3">
+                    <div className="flex items-center justify-between text-xs text-[var(--accent-light)] font-semibold border-b border-[var(--panel-border)] pb-2">
+                      <span className="flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5" />
+                        Channel Lifetime Totals (Required)
+                      </span>
+                      <span className="text-[10px] text-[var(--text-muted)]">From platform analytics dashboard</span>
+                    </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
-                  Daily Views (Today's Account Activity)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="e.g. 42100"
-                  value={accountForm.dailyViews}
-                  onChange={(e) => setAccountForm({ ...accountForm, dailyViews: e.target.value })}
-                  className="w-full bg-[var(--elevated)] border border-[var(--accent)]/30 rounded-lg p-2 text-xs text-slate-200 font-mono"
-                  required
-                />
-              </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                          Lifetime Total Views *
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 1250000"
+                          value={accountForm.allTimeViews}
+                          onChange={(e) => setAccountForm({ ...accountForm, allTimeViews: e.target.value })}
+                          className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                          Followers / Subscribers *
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 14200"
+                          value={accountForm.followerSnapshot}
+                          onChange={(e) => setAccountForm({ ...accountForm, followerSnapshot: e.target.value })}
+                          className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">Daily Likes</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="3450"
-                    value={accountForm.dailyLikes}
-                    onChange={(e) => setAccountForm({ ...accountForm, dailyLikes: e.target.value })}
-                    className="w-full bg-[var(--elevated)] border border-[var(--accent)]/30 rounded-lg p-2 text-xs text-slate-200 font-mono"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">Daily Comments</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="420"
-                    value={accountForm.dailyComments}
-                    onChange={(e) => setAccountForm({ ...accountForm, dailyComments: e.target.value })}
-                    className="w-full bg-[var(--elevated)] border border-[var(--accent)]/30 rounded-lg p-2 text-xs text-slate-200 font-mono"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">Daily Shares</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="280"
-                    value={accountForm.dailyShares}
-                    onChange={(e) => setAccountForm({ ...accountForm, dailyShares: e.target.value })}
-                    className="w-full bg-[var(--elevated)] border border-[var(--accent)]/30 rounded-lg p-2 text-xs text-slate-200 font-mono"
-                    required
-                  />
-                </div>
-              </div>
+                  <div className="p-3.5 rounded-xl bg-[var(--elevated)]/40 border border-[var(--panel-border)] space-y-3">
+                    <div className="text-xs text-[var(--text-muted)] font-semibold border-b border-[var(--panel-border)] pb-1.5">
+                      Optional Lifetime Engagement & Content Details
+                    </div>
 
-              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-[var(--accent)]/20">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">
+                          Total Likes
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 65000"
+                          value={accountForm.allTimeLikes}
+                          onChange={(e) => setAccountForm({ ...accountForm, allTimeLikes: e.target.value })}
+                          className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">
+                          Total Comments
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 4200"
+                          value={accountForm.allTimeComments}
+                          onChange={(e) => setAccountForm({ ...accountForm, allTimeComments: e.target.value })}
+                          className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">
+                          Total Shares
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 2100"
+                          value={accountForm.allTimeShares}
+                          onChange={(e) => setAccountForm({ ...accountForm, allTimeShares: e.target.value })}
+                          className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                          Total Published Videos / Shorts
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 48"
+                          value={accountForm.allTimeVideos}
+                          onChange={(e) => setAccountForm({ ...accountForm, allTimeVideos: e.target.value })}
+                          className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                          Profile Visits (Optional)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 1820"
+                          value={accountForm.profileVisits}
+                          onChange={(e) => setAccountForm({ ...accountForm, profileVisits: e.target.value })}
+                          className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* DAILY INSIGHT MODE FIELDS */
+                <>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                      Follower/Subscriber Snapshot (Total Audience Today) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 15380"
+                      value={accountForm.followerSnapshot}
+                      onChange={(e) => setAccountForm({ ...accountForm, followerSnapshot: e.target.value })}
+                      className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                      Daily Views (Activity on this date) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 42100"
+                      value={accountForm.dailyViews}
+                      onChange={(e) => setAccountForm({ ...accountForm, dailyViews: e.target.value })}
+                      className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">Daily Likes *</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="3450"
+                        value={accountForm.dailyLikes}
+                        onChange={(e) => setAccountForm({ ...accountForm, dailyLikes: e.target.value })}
+                        className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">Daily Comments *</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="420"
+                        value={accountForm.dailyComments}
+                        onChange={(e) => setAccountForm({ ...accountForm, dailyComments: e.target.value })}
+                        className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1">Daily Shares *</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="280"
+                        value={accountForm.dailyShares}
+                        onChange={(e) => setAccountForm({ ...accountForm, dailyShares: e.target.value })}
+                        className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                      Profile Visits (Optional)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 520"
+                      value={accountForm.profileVisits}
+                      onChange={(e) => setAccountForm({ ...accountForm, profileVisits: e.target.value })}
+                      className="w-full bg-[var(--elevated)] border border-[var(--panel-border)] rounded-lg p-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-[var(--panel-border)]">
                 <button
                   type="button"
                   onClick={() => setIsAccountModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[var(--text-muted)] hover:text-slate-200"
+                  className="px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 >
                   Cancel
                 </button>
@@ -791,7 +1271,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   type="submit"
                   className="px-4 py-2 text-xs font-bold rounded-lg command-btn-primary text-white"
                 >
-                  Save Insights
+                  {accountForm.entryType === 'all_time' ? 'Save All-Time Stats' : 'Save Daily Insights'}
                 </button>
               </div>
             </form>

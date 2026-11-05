@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Award,
   Calendar,
   Clock,
   Download,
@@ -40,9 +41,21 @@ export const QuickActionsModal: React.FC<QuickActionsModalProps> = ({
       },
     },
     {
+      id: 'all_time_analytics',
+      title: 'Enter All-Time Channel Stats',
+      desc: 'Record lifetime channel views, subscribers, total likes, and cumulative metrics',
+      icon: Award,
+      color: 'text-amber-300',
+      borderColor: 'border-amber-400/30',
+      action: () => {
+        onSelectAction('all_time_analytics');
+        onClose();
+      },
+    },
+    {
       id: 'account_analytics',
-      title: 'Log Daily Account Snapshot',
-      desc: 'Enter today’s views, follower snapshot, likes, comments, and shares per platform',
+      title: 'Log Daily Account Insights',
+      desc: 'Enter today’s activity: daily views, follower count, likes, comments, and shares',
       icon: TrendingUp,
       color: 'text-emerald-400',
       borderColor: 'border-emerald-500/30',

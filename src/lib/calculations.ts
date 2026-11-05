@@ -1,5 +1,6 @@
 import {
   AccountAnalyticsEntry,
+  AllTimePlatformStats,
   CheckpointInterval,
   OverallStatus,
   Platform,
@@ -139,8 +140,140 @@ export function calculateFollowerGrowth(
 }
 
 /**
- * Combined Views: Sum of daily account-level views for reporting period.
- * Strict rule: Never add account views and individual video views together.
+ * Calculates current all-time statistics for each platform.
+ * Supports:
+ * 1. Explicit All-Time snapshots (where user records their total channel views, followers, likes, comments, shares to date)
+ * 2. Daily activity aggregates (sum of logged daily views/likes/comments/shares)
+ * 3. Hybrid: All-Time baseline snapshot + subsequent daily logs
+ */
+export function calculateAllTimePlatformStats(
+  entries: AccountAnalyticsEntry[],
+  selectedPlatforms?: Platform[]
+): {
+  combined: {
+    followers: number;
+    views: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    videosCount: number;
+    weightedEngagementRate: number;
+  };
+  byPlatform: Record<Platform, AllTimePlatformStats>;
+} {
+  const platforms: Platform[] = selectedPlatforms && selectedPlatforms.length > 0
+    ? selectedPlatforms
+    : ['youtube_shorts', 'tiktok', 'instagram_reels', 'facebook_reels'];
+
+  const byPlatform: Record<Platform, AllTimePlatformStats> = {
+    youtube_shorts: { platform: 'youtube_shorts', followers: 0, views: 0, likes: 0, comments: 0, shares: 0, videosCount: 0, lastUpdated: '', source: 'all_time_snapshot' },
+    tiktok: { platform: 'tiktok', followers: 0, views: 0, likes: 0, comments: 0, shares: 0, videosCount: 0, lastUpdated: '', source: 'all_time_snapshot' },
+    instagram_reels: { platform: 'instagram_reels', followers: 0, views: 0, likes: 0, comments: 0, shares: 0, videosCount: 0, lastUpdated: '', source: 'all_time_snapshot' },
+    facebook_reels: { platform: 'facebook_reels', followers: 0, views: 0, likes: 0, comments: 0, shares: 0, videosCount: 0, lastUpdated: '', source: 'all_time_snapshot' },
+  };
+
+  for (const plat of platforms) {
+    const platEntries = entries.filter((e) => e.platform === plat);
+    if (platEntries.length === 0) continue;
+
+    // Check for explicit all-time snapshots
+    const allTimeEntries = platEntries
+      .filter((e) => e.entryType === 'all_time' || (e.allTimeViews !== undefined && e.allTimeViews > 0))
+      .sort((a, b) => b.reportingDate.localeCompare(a.reportingDate));
+
+    if (allTimeEntries.length > 0) {
+      const latestSnapshot = allTimeEntries[0];
+      const snapshotDate = latestSnapshot.reportingDate;
+
+      let views = latestSnapshot.allTimeViews ?? latestSnapshot.dailyViews ?? 0;
+      let likes = latestSnapshot.allTimeLikes ?? latestSnapshot.dailyLikes ?? 0;
+      let comments = latestSnapshot.allTimeComments ?? latestSnapshot.dailyComments ?? 0;
+      let shares = latestSnapshot.allTimeShares ?? latestSnapshot.dailyShares ?? 0;
+      let followers = latestSnapshot.followerSnapshot;
+      const videosCount = latestSnapshot.allTimeVideos ?? 0;
+
+      // Add any daily entries recorded AFTER this all-time snapshot date
+      const subsequentDailyEntries = platEntries.filter(
+        (e) => (e.entryType === 'daily' || e.entryType === undefined) && e.reportingDate > snapshotDate
+      );
+      for (const d of subsequentDailyEntries) {
+        views += d.dailyViews;
+        likes += d.dailyLikes;
+        comments += d.dailyComments;
+        shares += d.dailyShares;
+        followers = d.followerSnapshot; // latest audience snapshot
+      }
+
+      const latestDate = subsequentDailyEntries.length > 0
+        ? subsequentDailyEntries.sort((a, b) => b.reportingDate.localeCompare(a.reportingDate))[0].reportingDate
+        : snapshotDate;
+
+      byPlatform[plat] = {
+        platform: plat,
+        followers,
+        views,
+        likes,
+        comments,
+        shares,
+        videosCount,
+        lastUpdated: latestDate,
+        source: 'all_time_snapshot',
+      };
+    } else {
+      // Pure daily aggregates
+      let totalViews = 0;
+      let totalLikes = 0;
+      let totalComments = 0;
+      let totalShares = 0;
+      const sortedDaily = [...platEntries].sort((a, b) => b.reportingDate.localeCompare(a.reportingDate));
+      const latestFollowers = sortedDaily[0]?.followerSnapshot || 0;
+      const latestDate = sortedDaily[0]?.reportingDate || '';
+
+      for (const d of platEntries) {
+        totalViews += d.dailyViews;
+        totalLikes += d.dailyLikes;
+        totalComments += d.dailyComments;
+        totalShares += d.dailyShares;
+      }
+
+      byPlatform[plat] = {
+        platform: plat,
+        followers: latestFollowers,
+        views: totalViews,
+        likes: totalLikes,
+        comments: totalComments,
+        shares: totalShares,
+        videosCount: 0,
+        lastUpdated: latestDate,
+        source: 'daily_aggregate',
+      };
+    }
+  }
+
+  const combined = {
+    followers: Object.values(byPlatform).reduce((sum, p) => sum + p.followers, 0),
+    views: Object.values(byPlatform).reduce((sum, p) => sum + p.views, 0),
+    likes: Object.values(byPlatform).reduce((sum, p) => sum + p.likes, 0),
+    comments: Object.values(byPlatform).reduce((sum, p) => sum + p.comments, 0),
+    shares: Object.values(byPlatform).reduce((sum, p) => sum + p.shares, 0),
+    videosCount: Object.values(byPlatform).reduce((sum, p) => sum + (p.videosCount || 0), 0),
+    weightedEngagementRate: 0,
+  };
+
+  combined.weightedEngagementRate = calculateWeightedEngagementRate(
+    combined.likes,
+    combined.comments,
+    combined.shares,
+    combined.views
+  );
+
+  return { combined, byPlatform };
+}
+
+/**
+ * Combined Views: Computes total account views.
+ * When no date boundaries are specified (All-Time scope), returns true lifetime stats.
+ * When date boundaries are specified (e.g. 7d, 30d, 90d), computes the period delta.
  */
 export function calculateAccountViews(
   entries: AccountAnalyticsEntry[],
@@ -153,12 +286,55 @@ export function calculateAccountViews(
   totalComments: number;
   totalShares: number;
   entriesCount: number;
+  isAllTime: boolean;
   byPlatform: Record<Platform, { views: number; likes: number; comments: number; shares: number }>;
 } {
   const platforms: Platform[] = selectedPlatforms && selectedPlatforms.length > 0
     ? selectedPlatforms
     : ['youtube_shorts', 'tiktok', 'instagram_reels', 'facebook_reels'];
 
+  // If no date range filter is provided (All-Time scope), use all-time stats calculation
+  if (!startDate && !endDate) {
+    const allTimeStats = calculateAllTimePlatformStats(entries, platforms);
+    const byPlatformViews: Record<Platform, { views: number; likes: number; comments: number; shares: number }> = {
+      youtube_shorts: {
+        views: allTimeStats.byPlatform.youtube_shorts.views,
+        likes: allTimeStats.byPlatform.youtube_shorts.likes,
+        comments: allTimeStats.byPlatform.youtube_shorts.comments,
+        shares: allTimeStats.byPlatform.youtube_shorts.shares,
+      },
+      tiktok: {
+        views: allTimeStats.byPlatform.tiktok.views,
+        likes: allTimeStats.byPlatform.tiktok.likes,
+        comments: allTimeStats.byPlatform.tiktok.comments,
+        shares: allTimeStats.byPlatform.tiktok.shares,
+      },
+      instagram_reels: {
+        views: allTimeStats.byPlatform.instagram_reels.views,
+        likes: allTimeStats.byPlatform.instagram_reels.likes,
+        comments: allTimeStats.byPlatform.instagram_reels.comments,
+        shares: allTimeStats.byPlatform.instagram_reels.shares,
+      },
+      facebook_reels: {
+        views: allTimeStats.byPlatform.facebook_reels.views,
+        likes: allTimeStats.byPlatform.facebook_reels.likes,
+        comments: allTimeStats.byPlatform.facebook_reels.comments,
+        shares: allTimeStats.byPlatform.facebook_reels.shares,
+      },
+    };
+
+    return {
+      totalViews: allTimeStats.combined.views,
+      totalLikes: allTimeStats.combined.likes,
+      totalComments: allTimeStats.combined.comments,
+      totalShares: allTimeStats.combined.shares,
+      entriesCount: entries.filter((e) => platforms.includes(e.platform)).length,
+      isAllTime: true,
+      byPlatform: byPlatformViews,
+    };
+  }
+
+  // Filter for period
   let filtered = entries.filter((e) => platforms.includes(e.platform));
   if (startDate) {
     filtered = filtered.filter((e) => e.reportingDate >= startDate);
@@ -179,17 +355,57 @@ export function calculateAccountViews(
   let totalComments = 0;
   let totalShares = 0;
 
-  for (const entry of filtered) {
-    totalViews += entry.dailyViews;
-    totalLikes += entry.dailyLikes;
-    totalComments += entry.dailyComments;
-    totalShares += entry.dailyShares;
+  for (const plat of platforms) {
+    const platEntries = filtered.filter((e) => e.platform === plat);
+    const dailyEntries = platEntries.filter((e) => e.entryType === 'daily' || e.entryType === undefined);
+    const allTimeEntries = platEntries
+      .filter((e) => e.entryType === 'all_time' || (e.allTimeViews !== undefined && e.allTimeViews > 0))
+      .sort((a, b) => a.reportingDate.localeCompare(b.reportingDate));
 
-    if (byPlatform[entry.platform]) {
-      byPlatform[entry.platform].views += entry.dailyViews;
-      byPlatform[entry.platform].likes += entry.dailyLikes;
-      byPlatform[entry.platform].comments += entry.dailyComments;
-      byPlatform[entry.platform].shares += entry.dailyShares;
+    if (dailyEntries.length > 0) {
+      for (const entry of dailyEntries) {
+        totalViews += entry.dailyViews;
+        totalLikes += entry.dailyLikes;
+        totalComments += entry.dailyComments;
+        totalShares += entry.dailyShares;
+
+        byPlatform[plat].views += entry.dailyViews;
+        byPlatform[plat].likes += entry.dailyLikes;
+        byPlatform[plat].comments += entry.dailyComments;
+        byPlatform[plat].shares += entry.dailyShares;
+      }
+    } else if (allTimeEntries.length >= 2) {
+      const earliest = allTimeEntries[0];
+      const latest = allTimeEntries[allTimeEntries.length - 1];
+      const deltaViews = Math.max(0, (latest.allTimeViews || latest.dailyViews || 0) - (earliest.allTimeViews || earliest.dailyViews || 0));
+      const deltaLikes = Math.max(0, (latest.allTimeLikes || latest.dailyLikes || 0) - (earliest.allTimeLikes || earliest.dailyLikes || 0));
+      const deltaComments = Math.max(0, (latest.allTimeComments || latest.dailyComments || 0) - (earliest.allTimeComments || earliest.dailyComments || 0));
+      const deltaShares = Math.max(0, (latest.allTimeShares || latest.dailyShares || 0) - (earliest.allTimeShares || earliest.dailyShares || 0));
+
+      totalViews += deltaViews;
+      totalLikes += deltaLikes;
+      totalComments += deltaComments;
+      totalShares += deltaShares;
+
+      byPlatform[plat].views += deltaViews;
+      byPlatform[plat].likes += deltaLikes;
+      byPlatform[plat].comments += deltaComments;
+      byPlatform[plat].shares += deltaShares;
+    } else if (allTimeEntries.length === 1) {
+      const v = allTimeEntries[0].allTimeViews || allTimeEntries[0].dailyViews || 0;
+      const l = allTimeEntries[0].allTimeLikes || allTimeEntries[0].dailyLikes || 0;
+      const c = allTimeEntries[0].allTimeComments || allTimeEntries[0].dailyComments || 0;
+      const s = allTimeEntries[0].allTimeShares || allTimeEntries[0].dailyShares || 0;
+
+      totalViews += v;
+      totalLikes += l;
+      totalComments += c;
+      totalShares += s;
+
+      byPlatform[plat].views += v;
+      byPlatform[plat].likes += l;
+      byPlatform[plat].comments += c;
+      byPlatform[plat].shares += s;
     }
   }
 
@@ -199,6 +415,7 @@ export function calculateAccountViews(
     totalComments,
     totalShares,
     entriesCount: filtered.length,
+    isAllTime: false,
     byPlatform,
   };
 }

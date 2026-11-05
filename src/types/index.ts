@@ -58,18 +58,39 @@ export interface Material {
   deletedAt?: string | null; // For 30-day retention
 }
 
+export type AccountEntryType = 'all_time' | 'daily';
+
 export interface AccountAnalyticsEntry {
   id: string;
   platform: Platform;
   reportingDate: string; // YYYY-MM-DD
-  followerSnapshot: number; // Cumulative total snapshot
-  dailyViews: number; // Day's activity only
+  entryType?: AccountEntryType; // 'all_time' for lifetime channel stats, 'daily' for single-day insights
+  followerSnapshot: number; // Cumulative total followers/subscribers
+  dailyViews: number; // Single-day views (for daily logs; 0 or delta if all_time)
   dailyLikes: number;
   dailyComments: number;
   dailyShares: number;
+  allTimeViews?: number; // Lifetime cumulative channel views
+  allTimeLikes?: number; // Lifetime cumulative channel likes
+  allTimeComments?: number; // Lifetime cumulative channel comments
+  allTimeShares?: number; // Lifetime cumulative channel shares
+  allTimeVideos?: number; // Lifetime cumulative published videos/shorts on channel
   profileVisits?: number;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AllTimePlatformStats {
+  platform: Platform;
+  followers: number;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  videosCount?: number;
+  lastUpdated: string;
+  source: 'all_time_snapshot' | 'daily_aggregate';
 }
 
 export type CheckpointInterval = '24h' | '48h' | '7d' | '30d' | 'custom';

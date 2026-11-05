@@ -261,14 +261,19 @@ export const StorageService = {
     const list = this.getAccountAnalytics();
     const now = new Date().toISOString();
 
-    // Check for duplicate platform + reportingDate constraint
+    // Check for duplicate platform + reportingDate + entryType constraint
+    const targetType = entry.entryType || 'daily';
     const duplicate = list.find(
-      (e) => e.platform === entry.platform && e.reportingDate === entry.reportingDate && e.id !== entry.id
+      (e) => e.platform === entry.platform &&
+             e.reportingDate === entry.reportingDate &&
+             (e.entryType || 'daily') === targetType &&
+             e.id !== entry.id
     );
     if (duplicate) {
+      const typeLabel = targetType === 'all_time' ? 'All-Time snapshot' : 'daily insight';
       return {
         success: false,
-        error: `An entry for ${entry.platform} on date ${entry.reportingDate} already exists. Please edit that record instead.`,
+        error: `A ${typeLabel} for ${entry.platform} on date ${entry.reportingDate} already exists. Please edit that record instead.`,
       };
     }
 

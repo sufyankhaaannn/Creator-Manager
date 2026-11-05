@@ -5,6 +5,7 @@ import {
   calculateCombinedFollowerTotal,
   calculateFollowerGrowth,
   calculateAccountViews,
+  calculateAllTimePlatformStats,
   calculateWeightedEngagementRate,
   calculateCheckpointDeltas,
   calculatePublishingConsistency,
@@ -279,3 +280,118 @@ test('Publishing consistency reflects actual planned schedule rather than arbitr
   assert.equal(consistency.overdueCount, 1);
   assert.equal(consistency.onTimePercentage, 67); // 2/3 = 66.67% -> 67%
 });
+
+test('calculateAllTimePlatformStats accurately aggregates pure all-time data across platforms', () => {
+  const entries: AccountAnalyticsEntry[] = [
+    {
+      id: 'at_yt',
+      platform: 'youtube_shorts',
+      reportingDate: '2026-11-05',
+      entryType: 'all_time',
+      followerSnapshot: 15400,
+      dailyViews: 0,
+      dailyLikes: 0,
+      dailyComments: 0,
+      dailyShares: 0,
+      allTimeViews: 540000,
+      allTimeLikes: 42000,
+      allTimeComments: 3100,
+      allTimeShares: 1200,
+      allTimeVideos: 45,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: 'at_tt',
+      platform: 'tiktok',
+      reportingDate: '2026-11-05',
+      entryType: 'all_time',
+      followerSnapshot: 28000,
+      dailyViews: 0,
+      dailyLikes: 0,
+      dailyComments: 0,
+      dailyShares: 0,
+      allTimeViews: 850000,
+      allTimeLikes: 95000,
+      allTimeComments: 6400,
+      allTimeShares: 5300,
+      allTimeVideos: 62,
+      createdAt: '',
+      updatedAt: '',
+    },
+  ];
+
+  const stats = calculateAllTimePlatformStats(entries);
+  // Combined Views: 540,000 + 850,000 = 1,390,000
+  assert.equal(stats.combined.views, 1390000);
+  // Combined Followers: 15,400 + 28,000 = 43,400
+  assert.equal(stats.combined.followers, 43400);
+  // Combined Videos: 45 + 62 = 107
+  assert.equal(stats.combined.videosCount, 107);
+  // Platform individual check
+  assert.equal(stats.byPlatform.youtube_shorts.views, 540000);
+  assert.equal(stats.byPlatform.youtube_shorts.followers, 15400);
+  assert.equal(stats.byPlatform.tiktok.views, 850000);
+
+  // calculateAccountViews with no date boundaries returns the true All-Time total
+  const viewsCalc = calculateAccountViews(entries);
+  assert.equal(viewsCalc.isAllTime, true);
+  assert.equal(viewsCalc.totalViews, 1390000);
+});
+
+test('calculateAllTimePlatformStats seamlessly integrates all-time snapshot with subsequent daily logs', () => {
+  const entries: AccountAnalyticsEntry[] = [
+    {
+      id: 'at_yt',
+      platform: 'youtube_shorts',
+      reportingDate: '2026-11-01',
+      entryType: 'all_time',
+      followerSnapshot: 10000,
+      dailyViews: 0,
+      dailyLikes: 0,
+      dailyComments: 0,
+      dailyShares: 0,
+      allTimeViews: 100000,
+      allTimeLikes: 5000,
+      allTimeComments: 400,
+      allTimeShares: 200,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: 'd_yt_1',
+      platform: 'youtube_shorts',
+      reportingDate: '2026-11-02',
+      entryType: 'daily',
+      followerSnapshot: 10050,
+      dailyViews: 2500,
+      dailyLikes: 150,
+      dailyComments: 10,
+      dailyShares: 5,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: 'd_yt_2',
+      platform: 'youtube_shorts',
+      reportingDate: '2026-11-03',
+      entryType: 'daily',
+      followerSnapshot: 10120,
+      dailyViews: 3500,
+      dailyLikes: 200,
+      dailyComments: 15,
+      dailyShares: 10,
+      createdAt: '',
+      updatedAt: '',
+    },
+  ];
+
+  const stats = calculateAllTimePlatformStats(entries);
+  // Base 100,000 + 2,500 + 3,500 = 106,000 views
+  assert.equal(stats.byPlatform.youtube_shorts.views, 106000);
+  // Latest follower count: 10,120
+  assert.equal(stats.byPlatform.youtube_shorts.followers, 10120);
+  // Likes: 5000 + 150 + 200 = 5350
+  assert.equal(stats.byPlatform.youtube_shorts.likes, 5350);
+});
+

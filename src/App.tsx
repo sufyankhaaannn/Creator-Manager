@@ -249,6 +249,9 @@ export default function App() {
       case 'add_material':
         setCurrentTab('materials');
         break;
+      case 'all_time_analytics':
+        setCurrentTab('analytics');
+        break;
       case 'account_analytics':
         setCurrentTab('analytics');
         break;

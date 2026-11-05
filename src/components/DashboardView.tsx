@@ -245,11 +245,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>Create First Material (MAT-001)</span>
             </button>
             <button
-              onClick={() => onOpenQuickAction('account_analytics')}
+              onClick={() => onNavigate('analytics')}
               className="px-4 py-2 rounded-lg text-xs font-semibold bg-[var(--elevated)] border border-[var(--panel-border)] text-[var(--text-primary)] hover:border-[var(--accent)]/50 transition-all flex items-center gap-1.5"
             >
               <BarChart2 className="w-4 h-4 text-[var(--accent-light)]" />
-              <span>Log First Daily Account Insights</span>
+              <span>Enter All-Time Stats or Daily Insights</span>
             </button>
           </div>
         </div>
@@ -281,20 +281,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Card 1: Combined Account Views */}
         <div className="p-5 rounded-xl command-card hover:border-[var(--accent)]/40 transition-all space-y-2">
           <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
-            <span className="font-semibold tracking-wide uppercase text-[11px]">Combined Views</span>
+            <span className="font-semibold tracking-wide uppercase text-[11px]">
+              {viewsData.isAllTime ? 'Combined All-Time Views' : 'Combined Views'}
+            </span>
             <Eye className="w-4 h-4 text-[var(--accent-light)]" />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono text-[var(--text-primary)]">
             {viewsData.totalViews.toLocaleString()}
           </div>
           <div className="flex items-center justify-between text-xs pt-1">
-            <span className="text-[var(--text-muted)]">From daily account logs</span>
+            <span className="text-[var(--text-muted)]">
+              {viewsData.isAllTime ? 'Lifetime Channel Stats' : `Period (${selectedRange.toUpperCase()}) Activity`}
+            </span>
             <span className="text-emerald-400 font-mono font-medium">
-              {viewsData.entriesCount} logged days
+              {viewsData.entriesCount} entries
             </span>
           </div>
           <p className="text-[10px] text-[var(--text-muted)] border-t border-[var(--panel-border)] pt-1.5 leading-tight">
-            Account-level daily total. Strictly separated from video-level checkpoint views.
+            {viewsData.isAllTime
+              ? 'Lifetime views from all-time channel stats and daily aggregates across platforms.'
+              : 'Account views recorded for the selected window. Separated from video checkpoint views.'}
           </p>
         </div>
 
