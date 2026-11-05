@@ -1,0 +1,6 @@
+{
+  "name": "AbyssalFacts Creator Command Center",
+  "description": "Private operations, analytics, material hub, and scheduling command center for short-form creator publishing across YouTube Shorts, TikTok, Instagram Reels, and Facebook Reels.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
